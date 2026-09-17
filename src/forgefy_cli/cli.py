@@ -10,7 +10,7 @@ import sys
 import httpx
 
 from .auth import bootstrap_env
-from .chat import chat_loop
+from .chat import chat_loop, print_fragment
 from .config import TEMPLATE, config_path, load_config
 from .context import build_prompt
 from .editing import edit_files
@@ -36,11 +36,13 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--file", action="append", default=[], help="Explicit relative file to send; repeatable. Review for secrets first.")
     run.add_argument("--skill", choices=sorted(SKILLS), default="code")
     run.add_argument("--skill-file", type=Path, action="append", default=[], help="Trusted Markdown instructions to send; repeatable")
+    run.add_argument("--no-stream", action="store_true", help="Wait for the full response instead of printing it as it streams")
     chat = sub.add_parser("chat", help="Multi-turn conversation; replies are suggestions to review")
     chat.add_argument("--provider", help="Provider profile name (default: config or ollama)")
     chat.add_argument("--model", help="Exact provider model ID; no automatic paid fallback")
     chat.add_argument("--skill", choices=sorted(SKILLS), default="code")
     chat.add_argument("--skill-file", type=Path, action="append", default=[], help="Trusted Markdown instructions to send; repeatable")
+    chat.add_argument("--no-stream", action="store_true", help="Wait for each full response instead of printing it as it streams")
     chat.add_argument("--session", default="default", help="Named session to save to disk (default: 'default')")
     chat.add_argument("--resume", action="store_true", help="Load previous turns from --session before starting; without this, every run starts fresh (but is still saved)")
     chat.add_argument("--no-history", action="store_true", help="Don't load or save this session at all; ephemeral like before")
@@ -124,7 +126,11 @@ def main(argv: list[str] | None = None) -> int:
                 prompt = sys.stdin.read(120001) if args.prompt == "-" else args.prompt
                 prompt = build_prompt(prompt, args.workspace, args.file)
                 print(f"Sending request to {name} / {model}. Provider pricing applies; no fallback.", file=sys.stderr)
-                print(client.complete(model, system, prompt))
+                if args.no_stream:
+                    print(client.complete(model, system, prompt))
+                else:
+                    client.complete(model, system, prompt, on_token=print_fragment)
+                    print()
             else:
                 print(f"Chatting with {name} / {model}. /exit to leave; replies are suggestions to review, never executed.", file=sys.stderr)
                 if args.no_history:
@@ -140,7 +146,8 @@ def main(argv: list[str] | None = None) -> int:
                     else:
                         print(f"Session '{args.session}' will be saved to {session_path(args.session)}. "
                               f"Use --resume to continue it next time.", file=sys.stderr)
-                chat_loop(client, model, system, history=initial_history, on_turn=on_turn)
+                chat_on_token = None if args.no_stream else print_fragment
+                chat_loop(client, model, system, on_token=chat_on_token, history=initial_history, on_turn=on_turn)
         return 0
     except (ValueError, OSError, ProviderError) as exc:
         print(f"Forgefy: {exc}", file=sys.stderr)

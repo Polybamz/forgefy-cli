@@ -37,11 +37,31 @@ class CliTests(unittest.TestCase):
             self.assertEqual(request.url.path, "/v1/chat/completions")
             body = json.loads(request.content)
             self.assertEqual(body["model"], "test-coder")
+            self.assertIs(body["stream"], False)
             self.assertIn("x = 1", body["messages"][1]["content"])
             return httpx.Response(200, json={"choices": [{"message": {"content": "print('hello')"}, "finish_reason": "stop"}]})
         client = httpx.Client(transport=httpx.MockTransport(respond))
         with patch("forgefy_cli.cli.httpx.Client", return_value=client):
-            code, out, _ = self.invoke(["run", "Write Python", "--model", "test-coder", "--workspace", str(self.root), "--file", "main.py"])
+            code, out, _ = self.invoke(["run", "Write Python", "--model", "test-coder", "--workspace", str(self.root),
+                                         "--file", "main.py", "--no-stream"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "print('hello')")
+
+    def test_full_cli_request_streams_by_default(self):
+        (self.root / "main.py").write_text("x = 1", encoding="utf-8")
+        def respond(request):
+            body = json.loads(request.content)
+            self.assertIs(body["stream"], True)
+            sse = (
+                'data: {"choices": [{"delta": {"content": "print("}, "finish_reason": null}]}\n\n'
+                'data: {"choices": [{"delta": {"content": "\'hello\')"}, "finish_reason": "stop"}]}\n\n'
+                'data: [DONE]\n\n'
+            )
+            return httpx.Response(200, content=sse)
+        client = httpx.Client(transport=httpx.MockTransport(respond))
+        with patch("forgefy_cli.cli.httpx.Client", return_value=client):
+            code, out, _ = self.invoke(["run", "Write Python", "--model", "test-coder",
+                                         "--workspace", str(self.root), "--file", "main.py"])
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "print('hello')")
 

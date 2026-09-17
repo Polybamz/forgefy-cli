@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class ChatProcessTests(unittest.TestCase):
-    def run_session(self, lines, responses, extra_args=(), extra_env=None):
+    def run_session(self, lines, responses, extra_args=(), extra_env=None, stream=False):
         executable = Path(sys.executable).parent / ('forgefy.exe' if os.name == 'nt' else 'forgefy')
         if not executable.is_file():
             self.skipTest('Install forgefy-cli into the test interpreter environment first.')
@@ -23,7 +23,8 @@ class ChatProcessTests(unittest.TestCase):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 requests.append((self.path, body))
                 status, payload = next(pending, (500, {'error': 'Unexpected extra request'}))
-                data = json.dumps(payload).encode('utf-8')
+                # A str payload is sent as-is (for SSE); a dict is JSON-encoded.
+                data = payload.encode('utf-8') if isinstance(payload, str) else json.dumps(payload).encode('utf-8')
                 self.send_response(status)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', str(len(data)))
@@ -53,8 +54,14 @@ class ChatProcessTests(unittest.TestCase):
                                # this via extra_env to share one dir across two runs.
                                FORGEFY_HISTORY_DIR=str(Path(directory) / '_history'))
                     env.update(extra_env or {})
+                    # This fake server answers with a plain JSON body unless a test
+                    # opts into `stream=True` (and sends SSE-text responses) — most
+                    # tests here are about history/error handling, not streaming
+                    # itself, so --no-stream is the default to match what the
+                    # server actually speaks.
+                    stream_args = () if stream else ('--no-stream',)
                     result = subprocess.run(
-                        [str(executable), 'chat', *extra_args], input='\n'.join(lines) + '\n',
+                        [str(executable), 'chat', *stream_args, *extra_args], input='\n'.join(lines) + '\n',
                         capture_output=True, text=True, encoding='utf-8', timeout=15,
                         cwd=directory, env=env,
                     )
@@ -66,7 +73,7 @@ class ChatProcessTests(unittest.TestCase):
         for path, body in requests:
             self.assertEqual(path, '/v1/chat/completions')
             self.assertEqual(body['model'], 'test-model')
-            self.assertIs(body['stream'], False)
+            self.assertIs(body['stream'], stream)
             self.assertEqual(body['messages'][0]['role'], 'system')
         return result, [body['messages'][1:] for _, body in requests]
 
@@ -188,6 +195,18 @@ class ChatProcessTests(unittest.TestCase):
                 extra_args=['--session', 'beta'], extra_env=env,
             )
             self.assertEqual(messages[0], [{'role': 'user', 'content': 'session b turn'}])
+
+    def test_streaming_reply_prints_live_and_is_recorded_whole(self):
+        sse = (
+            'data: {"choices": [{"delta": {"content": "Hel"}, "finish_reason": null}]}\n\n'
+            'data: {"choices": [{"delta": {"content": "lo!"}, "finish_reason": "stop"}]}\n\n'
+            'data: [DONE]\n\n'
+        )
+        result, messages = self.run_session(
+            ['hi', '/exit'], [(200, sse)], stream=True,
+        )
+        self.assertIn('Hello!', result.stdout)
+        self.assertEqual(messages[0], [{'role': 'user', 'content': 'hi'}])
 
 
 if __name__ == '__main__':

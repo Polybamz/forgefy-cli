@@ -77,6 +77,7 @@ class CommandRunner:
                 timeout=self.timeout,
                 text=True,
                 errors="replace",
+                check=False,  # exit_code is reported back to the model, never raised
             )
         except subprocess.TimeoutExpired:
             return json.dumps({"error": f"Command timed out after {self.timeout}s."})
