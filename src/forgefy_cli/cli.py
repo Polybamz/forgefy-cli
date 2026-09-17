@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from importlib.metadata import PackageNotFoundError, version
 import os
 from pathlib import Path
 import sys
@@ -13,13 +14,19 @@ from .chat import chat_loop
 from .config import TEMPLATE, config_path, load_config
 from .context import build_prompt
 from .editing import edit_files
+from .history import load_session, save_session, session_path
 from .providers import ModelClient, ProviderError
 from .skills import SKILLS, system_prompt
 
+try:
+    _VERSION = version("forgefy-cli")
+except PackageNotFoundError:  # running from source without an install record
+    _VERSION = "0.0.0-dev"
+
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="forgefy", description="Forgefy: local or hosted coding assistance. Run/chat suggest; edit applies approved file changes. No command execution.")
-    result.add_argument("--version", action="version", version="Forgefy CLI 0.1.0")
+    result = argparse.ArgumentParser(prog="forgefy", description="Forgefy: local or hosted coding assistance. Run/chat suggest; edit applies approved file changes and, with --allow-commands, runs approved shell commands.")
+    result.add_argument("--version", action="version", version=f"Forgefy CLI {_VERSION}")
     sub = result.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="Send one coding request and print the response")
     run.add_argument("prompt", help="Coding request; use '-' to read from stdin")
@@ -34,6 +41,9 @@ def parser() -> argparse.ArgumentParser:
     chat.add_argument("--model", help="Exact provider model ID; no automatic paid fallback")
     chat.add_argument("--skill", choices=sorted(SKILLS), default="code")
     chat.add_argument("--skill-file", type=Path, action="append", default=[], help="Trusted Markdown instructions to send; repeatable")
+    chat.add_argument("--session", default="default", help="Named session to save to disk (default: 'default')")
+    chat.add_argument("--resume", action="store_true", help="Load previous turns from --session before starting; without this, every run starts fresh (but is still saved)")
+    chat.add_argument("--no-history", action="store_true", help="Don't load or save this session at all; ephemeral like before")
     edit = sub.add_parser("edit", help="Edit explicitly selected existing files with approval for every diff")
     edit.add_argument("prompt", help="Requested change")
     edit.add_argument("--provider", help="Provider profile; requires a tool-calling model")
@@ -42,6 +52,9 @@ def parser() -> argparse.ArgumentParser:
     edit.add_argument("--file", action="append", default=[], help="Allowed existing relative file; repeatable")
     edit.add_argument("--create", action="append", default=[], help="Approved relative path to create; repeatable, parent dir must exist")
     edit.add_argument("--max-turns", type=int, default=12, help="Maximum model requests (1–30; default 12)")
+    edit.add_argument("--allow-commands", action="store_true",
+                       help="Let the model propose shell commands (e.g. to run tests); each still requires your approval. Not sandboxed.")
+    edit.add_argument("--command-timeout", type=int, default=120, help="Seconds before an approved command is killed (default 120)")
     models = sub.add_parser("models", help="List live provider model IDs (availability and pricing vary)")
     models.add_argument("--provider")
     login = sub.add_parser("login", help="Sign in with your Forgefy account via the browser (device code)")
@@ -102,7 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         with httpx.Client(timeout=httpx.Timeout(120, connect=10)) as http:
             client = ModelClient(provider, http)
             if args.command == "edit":
-                                return edit_files(client, model, args.prompt, args.workspace, args.file, args.max_turns, args.create)
+                return edit_files(client, model, args.prompt, args.workspace, args.file, args.max_turns,
+                                   args.create, args.allow_commands, args.command_timeout)
             if args.command == "models":
                 for model_id in client.models():
                     print(model_id)
@@ -113,7 +127,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(client.complete(model, system, prompt))
             else:
                 print(f"Chatting with {name} / {model}. /exit to leave; replies are suggestions to review, never executed.", file=sys.stderr)
-                chat_loop(client, model, system)
+                if args.no_history:
+                    initial_history, on_turn = [], (lambda h: None)
+                else:
+                    initial_history = load_session(args.session) if args.resume else []
+                    on_turn = lambda h: save_session(args.session, h)  # noqa: E731
+                    if args.resume and initial_history:
+                        print(f"Resumed session '{args.session}' ({len(initial_history) // 2} previous turn(s)). "
+                              f"/new to start fresh.", file=sys.stderr)
+                    elif args.resume:
+                        print(f"No previous history for session '{args.session}' — starting fresh.", file=sys.stderr)
+                    else:
+                        print(f"Session '{args.session}' will be saved to {session_path(args.session)}. "
+                              f"Use --resume to continue it next time.", file=sys.stderr)
+                chat_loop(client, model, system, history=initial_history, on_turn=on_turn)
         return 0
     except (ValueError, OSError, ProviderError) as exc:
         print(f"Forgefy: {exc}", file=sys.stderr)

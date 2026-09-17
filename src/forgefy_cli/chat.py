@@ -9,9 +9,17 @@ from .providers import ProviderError
 LEAVING = "/exit or /quit (leave), /new (clear history), /help (commands)"
 
 
-def chat_loop(client, model: str, system: str, input_fn: Callable[..., str] = input, output: Callable[[str], None] = print) -> int:
-    """Read user turns until /exit, /quit or end of input. History is sent each turn."""
-    history: list[tuple[str, str]] = []
+def chat_loop(client, model: str, system: str, input_fn: Callable[..., str] = input, output: Callable[[str], None] = print,
+              history: list[tuple[str, str]] | None = None,
+              on_turn: Callable[[list[tuple[str, str]]], None] = lambda h: None) -> int:
+    """Read user turns until /exit, /quit or end of input. History is sent each turn.
+
+    `history` seeds a resumed session (see forgefy_cli.history); `on_turn` is
+    called with the updated history after every completed exchange and after
+    /new, so a caller can persist it incrementally — a crash mid-session loses
+    at most the in-flight turn, not the whole conversation.
+    """
+    history = list(history or [])
     while True:
         try:
             line = input_fn("you> ").strip()
@@ -23,6 +31,7 @@ def chat_loop(client, model: str, system: str, input_fn: Callable[..., str] = in
             return 0
         if line == "/new":
             history.clear()
+            on_turn(history)
             output("Context cleared.")
             continue
         if line == "/help":
@@ -44,6 +53,7 @@ def chat_loop(client, model: str, system: str, input_fn: Callable[..., str] = in
             output(f"Forgefy: {exc}")
             continue
         history = candidate + [("assistant", reply)]
+        on_turn(history)
         if removed:
             output(f"Context limit: omitted {removed} oldest turn pair(s).")
         output(reply)

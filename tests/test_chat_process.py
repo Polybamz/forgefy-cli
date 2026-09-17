@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class ChatProcessTests(unittest.TestCase):
-    def run_session(self, lines, responses):
+    def run_session(self, lines, responses, extra_args=(), extra_env=None):
         executable = Path(sys.executable).parent / ('forgefy.exe' if os.name == 'nt' else 'forgefy')
         if not executable.is_file():
             self.skipTest('Install forgefy-cli into the test interpreter environment first.')
@@ -46,9 +46,15 @@ class ChatProcessTests(unittest.TestCase):
                         encoding='utf-8',
                     )
                     env = dict(os.environ, FORGEFY_CONFIG=str(config), PYTHONIOENCODING='utf-8',
-                               NO_PROXY='127.0.0.1,localhost', no_proxy='127.0.0.1,localhost')
+                               NO_PROXY='127.0.0.1,localhost', no_proxy='127.0.0.1,localhost',
+                               # Isolated by default so no test ever touches the real
+                               # ~/.forgefy/history/ or leaks state into another test;
+                               # tests that specifically exercise persistence override
+                               # this via extra_env to share one dir across two runs.
+                               FORGEFY_HISTORY_DIR=str(Path(directory) / '_history'))
+                    env.update(extra_env or {})
                     result = subprocess.run(
-                        [str(executable), 'chat'], input='\n'.join(lines) + '\n',
+                        [str(executable), 'chat', *extra_args], input='\n'.join(lines) + '\n',
                         capture_output=True, text=True, encoding='utf-8', timeout=15,
                         cwd=directory, env=env,
                     )
@@ -111,6 +117,77 @@ class ChatProcessTests(unittest.TestCase):
         self.assertEqual(messages[1], [{'role': 'user', 'content': 'retry'}])
         self.assertIn('no assistant message', result.stdout)
         self.assertIn('valid reply', result.stdout)
+
+    def test_session_saved_but_not_auto_resumed_without_resume_flag(self):
+        # Default is safe-by-default: every run starts fresh even under the
+        # same --session name, so an old conversation never silently bleeds
+        # into an unrelated one. Persistence still happens either way.
+        with tempfile.TemporaryDirectory() as history_dir:
+            env = {'FORGEFY_HISTORY_DIR': history_dir}
+            result1, _ = self.run_session(
+                ['remember 42', '/exit'], [self.answer('noted')],
+                extra_args=['--session', 'proj'], extra_env=env,
+            )
+            self.assertIn("Session 'proj' will be saved to", result1.stderr)
+            self.assertIn('--resume', result1.stderr)
+
+            result2, messages2 = self.run_session(
+                ['what was it?', '/exit'], [self.answer('no idea')],
+                extra_args=['--session', 'proj'], extra_env=env,
+            )
+            self.assertNotIn('Resumed', result2.stderr)
+            self.assertEqual(messages2[0], [{'role': 'user', 'content': 'what was it?'}])
+
+    def test_resume_flag_loads_previous_session(self):
+        with tempfile.TemporaryDirectory() as history_dir:
+            env = {'FORGEFY_HISTORY_DIR': history_dir}
+            self.run_session(
+                ['remember 42', '/exit'], [self.answer('noted')],
+                extra_args=['--session', 'proj'], extra_env=env,
+            )
+
+            result2, messages2 = self.run_session(
+                ['what was it?', '/exit'], [self.answer('it was 42')],
+                extra_args=['--session', 'proj', '--resume'], extra_env=env,
+            )
+            self.assertIn("Resumed session 'proj' (1 previous turn(s))", result2.stderr)
+            self.assertEqual(messages2[0], [
+                {'role': 'user', 'content': 'remember 42'},
+                {'role': 'assistant', 'content': 'noted'},
+                {'role': 'user', 'content': 'what was it?'},
+            ])
+
+    def test_resume_with_no_prior_session_starts_fresh(self):
+        with tempfile.TemporaryDirectory() as history_dir:
+            result, messages = self.run_session(
+                ['hello', '/exit'], [self.answer('hi')],
+                extra_args=['--session', 'never-seen', '--resume'],
+                extra_env={'FORGEFY_HISTORY_DIR': history_dir},
+            )
+            self.assertIn("No previous history for session 'never-seen'", result.stderr)
+            self.assertEqual(messages[0], [{'role': 'user', 'content': 'hello'}])
+
+    def test_no_history_flag_does_not_persist(self):
+        with tempfile.TemporaryDirectory() as history_dir:
+            env = {'FORGEFY_HISTORY_DIR': history_dir}
+            self.run_session(
+                ['hello', '/exit'], [self.answer('hi')],
+                extra_args=['--session', 'ephemeral', '--no-history'], extra_env=env,
+            )
+            self.assertEqual(list(Path(history_dir).glob('*.json')), [])
+
+    def test_different_sessions_do_not_leak_into_each_other(self):
+        with tempfile.TemporaryDirectory() as history_dir:
+            env = {'FORGEFY_HISTORY_DIR': history_dir}
+            self.run_session(
+                ['session a turn', '/exit'], [self.answer('a reply')],
+                extra_args=['--session', 'alpha'], extra_env=env,
+            )
+            _, messages = self.run_session(
+                ['session b turn', '/exit'], [self.answer('b reply')],
+                extra_args=['--session', 'beta'], extra_env=env,
+            )
+            self.assertEqual(messages[0], [{'role': 'user', 'content': 'session b turn'}])
 
 
 if __name__ == '__main__':

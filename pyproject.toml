@@ -1,6 +1,6 @@
 [project]
 name = "forgefy-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "Forgefy CLI — coding assistance with local and hosted model-provider profiles."
 readme = "README.md"
 requires-python = ">=3.11"
