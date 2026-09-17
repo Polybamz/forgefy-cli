@@ -1,0 +1,32 @@
+Forgefy CLI License
+
+Copyright (c) 2026 Forgefy. All rights reserved.
+
+This software ("Forgefy CLI") and its source code are made available so you
+may install, run, and inspect it. This is not an open-source license: rights
+beyond those stated below are reserved.
+
+1. Grant of use. You may install and run Forgefy CLI, for any purpose,
+   including commercial use, subject to the terms below.
+
+2. Restrictions. You may not, without prior written permission from Forgefy:
+   a. redistribute Forgefy CLI, in original or modified form, whether
+      standalone or bundled with other software;
+   b. use the Forgefy name, logo, or branding to promote software you
+      distribute derived from this source;
+   c. remove or alter this license notice from copies of the software.
+
+3. No warranty. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+   KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+4. Limitation of liability. IN NO EVENT SHALL FORGEFY BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+5. Third-party services. Forgefy CLI can send data you provide (prompts,
+   explicitly selected files) to model providers you configure, including
+   Forgefy's own hosted API. Your use of those providers is subject to their
+   own terms.
+
+Contact: [add a contact email/URL for licensing requests] for permissions
+beyond this license.

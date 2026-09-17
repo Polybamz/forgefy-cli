@@ -24,12 +24,23 @@ class Provider:
         return {"Authorization": f"Bearer {key}"}
 
 
+# Same $FORGEFY_API_URL convention as the official SDKs (sdks/python,
+# sdks/typescript) and the self-hosted docs — the API has no single fixed
+# public host, so the origin is always read from the environment.
+_FORGEFY_API_URL = os.environ.get("FORGEFY_API_URL", "http://localhost:5000").rstrip("/")
+
 BUILTINS = {
     "ollama": Provider("ollama", "http://localhost:11434/v1"),
     "openai": Provider("openai", "https://api.openai.com/v1", "OPENAI_API_KEY"),
     "openrouter": Provider("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "deepseek": Provider("deepseek", "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "groq": Provider("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY"),
+    # Your Forgefy account, not a separate credential: mint a key on the
+    # Developers page — the same fgy_live_… keys and monthly token budget the
+    # extract API and web builds use — and `export FORGEFY_API_KEY=fgy_live_…`.
+    # Set FORGEFY_API_URL too if you're not on the default host (self-hosted,
+    # local dev). See app/api/v1/cli.py in forgefy-backend.
+    "forgefy": Provider("forgefy", f"{_FORGEFY_API_URL}/api/v1/cli", "FORGEFY_API_KEY"),
 }
 
 TEMPLATE = '''# Keep API keys in environment variables, never here.

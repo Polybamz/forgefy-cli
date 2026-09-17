@@ -1,2 +1,0 @@
-[console_scripts]
-forgefy = forgefy_cli.cli:main

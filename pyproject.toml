@@ -4,13 +4,30 @@ version = "0.1.0"
 description = "Forgefy CLI — coding assistance with local and hosted model-provider profiles."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "LicenseRef-Proprietary"
+license-files = ["LICENSE"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "httpx>=0.27",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://forgefy.app"
+Repository = "https://github.com/Polybamz/forgefy-cli"
 
 [project.scripts]
 forgefy = "forgefy_cli.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"

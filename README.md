@@ -4,11 +4,22 @@ A Python 3.11+ coding-assistance CLI. Language-independent prompts support writi
 debugging, reviewing, testing, refactoring and planning code. Quality and language
 coverage depend on the selected model; no model is guaranteed to be best at everything.
 
-## Install and run (PowerShell)
+## Install
 
 ```powershell
-& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\python.exe' -m pip install -e 'C:\Users\USER\Desktop\polycarp\forgefy-cli'
-& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\Activate.ps1'
+pip install forgefy-cli
+```
+
+Not yet published to PyPI? Install straight from GitHub instead:
+
+```powershell
+pip install git+https://github.com/Polybamz/forgefy-cli.git
+```
+
+Either way this creates the `forgefy` executable on your PATH (inside whichever
+Python environment you ran `pip install` in):
+
+```powershell
 forgefy --help
 forgefy config --init
 forgefy providers
@@ -16,8 +27,13 @@ forgefy skills
 forgefy doctor
 ```
 
-The installation creates the `forgefy` executable in the selected Python environment.
-Activate that environment or use the executable's absolute path.
+### Developing locally
+
+```powershell
+git clone https://github.com/Polybamz/forgefy-cli.git
+cd forgefy-cli
+pip install -e ".[dev]"
+```
 
 ## Local and hosted models
 
@@ -137,6 +153,17 @@ before running anything. Tests use mocked HTTP, not live model quality benchmark
 ## Tests
 
 ```powershell
-& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\python.exe' -m unittest discover -s 'C:\Users\USER\Desktop\polycarp\forgefy-cli\tests' -v
+pytest
 ```
-"# forgefy-cli" 
+
+## Releasing (maintainers)
+
+CI runs on every push/PR (`.github/workflows/ci.yml`). To publish a new version to PyPI:
+
+1. Bump `version` in `pyproject.toml` and commit.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. `.github/workflows/release.yml` builds, tests, and publishes via PyPI Trusted
+   Publishing — no token stored in the repo. One-time setup: on the PyPI project's
+   *Publishing* settings, add a Trusted Publisher for `Polybamz/forgefy-cli`,
+   workflow `release.yml`, environment `pypi`.
+
