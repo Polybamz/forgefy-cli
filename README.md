@@ -1,0 +1,142 @@
+# Forgefy CLI (initial release)
+
+A Python 3.11+ coding-assistance CLI. Language-independent prompts support writing,
+debugging, reviewing, testing, refactoring and planning code. Quality and language
+coverage depend on the selected model; no model is guaranteed to be best at everything.
+
+## Install and run (PowerShell)
+
+```powershell
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\python.exe' -m pip install -e 'C:\Users\USER\Desktop\polycarp\forgefy-cli'
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\Activate.ps1'
+forgefy --help
+forgefy config --init
+forgefy providers
+forgefy skills
+forgefy doctor
+```
+
+The installation creates the `forgefy` executable in the selected Python environment.
+Activate that environment or use the executable's absolute path.
+
+## Local and hosted models
+
+With Ollama running and a model installed, list exact IDs and choose one:
+
+```powershell
+forgefy models --provider ollama
+forgefy run "Write a Rust function with unit tests that validates an email address" --provider ollama --model YOUR_INSTALLED_MODEL
+```
+
+For OpenRouter, set `OPENROUTER_API_KEY` in your environment, list models, then select
+an exact available ID. Free-tier models and availability are provider-controlled;
+verify pricing before sending requests. Local inference has hardware/energy costs.
+
+```powershell
+forgefy models --provider openrouter
+forgefy run "Explain this Python module and suggest tests" --provider openrouter --model YOUR_MODEL_ID --workspace 'C:\Users\USER\Desktop\polycarp\forgefy-cli' --file src/forgefy_cli/context.py --skill review
+```
+
+Built-in profiles: Ollama, OpenAI, OpenRouter, DeepSeek and Groq. Anthropic and Gemini
+models can be used through OpenRouter when offered there; native Anthropic/Gemini
+protocols are not implemented. No automatic provider or paid-model fallback occurs.
+Compatibility requires the `/models` and `/chat/completions` endpoints; a listed model
+is not necessarily a compatible text-generation model.
+
+## Provider plugins
+
+`forgefy config` prints the config path (normally your home directory's
+`.forgefy/config.toml`). `FORGEFY_CONFIG` can select an alternate file.
+Add declarative OpenAI-compatible provider profiles:
+
+```toml
+default_provider = "local_server"
+default_model = "your-model-id"
+
+[providers.local_server]
+base_url = "http://localhost:1234/v1"
+api_key_env = ""
+
+[providers.company]
+base_url = "https://models.example.com/v1"
+api_key_env = "COMPANY_MODEL_KEY"
+```
+
+Never store keys directly in configuration. Custom profiles cannot override built-in
+names. HTTPS is required for non-loopback endpoints. Only configure servers you trust:
+the chosen server receives your prompt, explicit file context, and its configured key.
+These plugins are configuration, not executable Python code or an MCP integration.
+
+## Skills and context
+
+Choose `--skill code|debug|review|test|refactor|plan`. Repeat `--skill-file` to include
+trusted UTF-8 Markdown instructions. Repeat `--file` to send workspace-relative source
+files. Use a prompt of `-` for standard input. No repository files are sent implicitly.
+Files must resolve within the workspace. Common credential paths are excluded, but this
+is not a secret scanner: review every file and prompt before sending. Requests have a
+120,000-character input cap; individual models may require much smaller inputs.
+
+## Interactive chat
+
+```powershell
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\forgefy.exe' chat --provider ollama --model llama3:latest
+```
+
+Chat retains conversation history in memory for follow-up questions. `/new` clears it,
+`/help` lists commands, and `/exit` or `/quit` ends the session. EOF exits normally;
+Ctrl+C cancels. History is not saved to disk. Each request resends retained history,
+so hosted-provider usage can grow each turn. No automatic paid fallback occurs.
+Oldest complete user/assistant pairs are omitted when conversational content exceeds
+120,000 characters; system/skill instructions are additional. This is a character cap,
+not a token budget. Failed requests preserve prior history. Chat accepts single-line
+turns and skill plugins; explicit `--file` context is currently supported by `run` only.
+
+## Approved file editing
+
+`forgefy edit` can modify explicitly selected, **existing** UTF-8 files with a model
+supporting OpenAI-compatible tool calling. `run` and `chat` remain suggestion-only.
+In an interactive terminal, for example:
+
+```powershell
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\forgefy.exe' edit "Improve error handling in this module" --provider ollama --model YOUR_TOOL_CALLING_MODEL --workspace 'C:\Users\USER\Desktop\polycarp\forgefy-cli' --file src/forgefy_cli/context.py
+```
+
+Review the selected files for secrets before starting: the model can read their contents
+and send them to the selected provider without further read approval. Each replacement
+shows a complete diff and requires typing `yes`. There is no automatic approval flag.
+The executor requires a prior read, an exact single match, and unchanged contents before
+and after approval. Updates use a sibling temporary file and atomic replacement.
+
+Only files named by repeatable `--file` options are accessible. Hidden paths, common
+credential files, symlinks, junctions, hardlinks and nonregular files are rejected.
+Files and replacements are limited to 32,000 bytes; oversized diffs are rejected, not
+truncated for approval. These checks are not a secret scanner or an OS security sandbox.
+Use a trusted workspace without concurrent writers: a small filesystem race window
+remains between validation and replacement. Atomic replacement preserves mode bits,
+not necessarily all filesystem metadata or custom ACLs.
+
+The default limit is 12 model requests (`--max-turns` accepts 1–30), with a
+120,000-character serialized conversation cap. Exit code 2 means a limit stopped an
+incomplete session; 1 indicates an error and 130 indicates cancellation. Exit code 0
+means the model finished, not that its changes are correct or tested. Applied edits
+remain on disk if the session stops or fails—there is no session-wide rollback.
+Use version control or backups and review the printed list of files actually changed.
+
+Editing currently supports replacements only: no file creation, deletion, shell commands,
+or custom skill files. Its integration tests use mocked model responses and temporary
+files; live model-driven editing has not been verified.
+
+## Current boundaries
+
+This release can apply approved replacements, but it does **not** execute
+commands, run tests on generated code, stream tokens, persist chat history, or connect
+to the Forgefy admin catalogue. Provider profiles and skill files are the initial plugin
+interfaces, not a full autonomous coding-agent system. Output is untrusted: inspect it
+before running anything. Tests use mocked HTTP, not live model quality benchmarks.
+
+## Tests
+
+```powershell
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\python.exe' -m unittest discover -s 'C:\Users\USER\Desktop\polycarp\forgefy-cli\tests' -v
+```
+"# forgefy-cli" 
