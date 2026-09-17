@@ -1,14 +1,23 @@
 name: Release
 
-# Publishes to PyPI when a version tag is pushed, e.g.:
+# Publishes forgefy-cli when a version tag is pushed, e.g.:
 #   git tag v0.1.0 && git push origin v0.1.0
 # The tag's number must match pyproject.toml's [project].version, or PyPI
 # will reject the upload as a duplicate/mismatched version.
 #
-# One-time setup before this can run: on pypi.org, under the forgefy-cli
-# project's "Publishing" settings, add a Trusted Publisher for this repo
-# (Polybamz/forgefy-cli), workflow file "release.yml", environment "pypi".
-# No PyPI token/secret is needed — GitHub's OIDC token proves the identity.
+# Two independent outputs from the same tag:
+#   1. PyPI package (build/publish below) — `pip install`/`pipx install`.
+#   2. Standalone binaries attached to a GitHub Release (build-binary/
+#      github-release below) — no Python required, fetched by install.sh /
+#      install.ps1. Same distribution model as Ollama's installer or
+#      Claude Code's `curl | bash` installer.
+#
+# One-time setup before the PyPI half can run: on pypi.org, under the
+# forgefy-cli project's "Publishing" settings, add a Trusted Publisher for
+# this repo (Polybamz/forgefy-cli), workflow file "release.yml", environment
+# "pypi". No PyPI token/secret is needed — GitHub's OIDC token proves the
+# identity. The GitHub Release half needs no setup: it uses the repo's
+# built-in GITHUB_TOKEN.
 
 on:
   push:
@@ -45,3 +54,53 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ── Standalone binaries (no Python required) ────────────────────────────────
+  build-binary:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset: forgefy-windows-amd64.exe
+            built: dist_native/forgefy.exe
+          - os: ubuntu-latest
+            asset: forgefy-linux-amd64
+            built: dist_native/forgefy
+          - os: macos-latest
+            asset: forgefy-macos-arm64
+            built: dist_native/forgefy
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e . pyinstaller
+      # See build_installer/entrypoint.py for why PyInstaller targets that
+      # wrapper instead of src/forgefy_cli/cli.py directly (relative imports).
+      - run: >
+          pyinstaller --onefile --name forgefy --paths src
+          --hidden-import anyio._backends._asyncio
+          --distpath dist_native --workpath build_native --specpath build_native
+          build_installer/entrypoint.py
+      - run: mkdir -p out && cp ${{ matrix.built }} out/${{ matrix.asset }}
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: out/${{ matrix.asset }}
+
+  github-release:
+    needs: build-binary
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to create a GitHub Release and upload assets
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: forgefy-*
+          merge-multiple: true
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" artifacts/* --generate-notes

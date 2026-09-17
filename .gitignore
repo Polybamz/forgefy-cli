@@ -4,6 +4,11 @@ __pycache__/
 .eggs/
 build/
 dist/
+# PyInstaller output for the standalone binary (build_installer/entrypoint.py
+# is source and IS tracked; these are its generated build products).
+dist_native/
+build_native/
+out/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

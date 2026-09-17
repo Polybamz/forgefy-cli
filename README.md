@@ -6,18 +6,28 @@ coverage depend on the selected model; no model is guaranteed to be best at ever
 
 ## Install
 
-```powershell
-pip install forgefy-cli
+No Python required — installs a standalone `forgefy` binary and puts it on
+your PATH, the same way Ollama's or Claude Code's installer does:
+
+macOS / Linux:
+```sh
+curl -fsSL https://raw.githubusercontent.com/Polybamz/forgefy-cli/main/install.sh | sh
 ```
 
-Not yet published to PyPI? Install straight from GitHub instead:
-
+Windows (PowerShell):
 ```powershell
-pip install git+https://github.com/Polybamz/forgefy-cli.git
+irm https://raw.githubusercontent.com/Polybamz/forgefy-cli/main/install.ps1 | iex
 ```
 
-Either way this creates the `forgefy` executable on your PATH (inside whichever
-Python environment you ran `pip install` in):
+Already have Python? `pip`/`pipx` work too — prefer `pipx` over plain `pip`,
+since `pip install` can silently install to a user directory that isn't on
+your PATH:
+
+```powershell
+pipx install forgefy-cli
+```
+
+Either way, open a new terminal and you should have the `forgefy` command:
 
 ```powershell
 forgefy --help
@@ -158,12 +168,26 @@ pytest
 
 ## Releasing (maintainers)
 
-CI runs on every push/PR (`.github/workflows/ci.yml`). To publish a new version to PyPI:
+CI runs on every push/PR (`.github/workflows/ci.yml`). One tag produces both
+distribution channels:
 
 1. Bump `version` in `pyproject.toml` and commit.
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. `.github/workflows/release.yml` builds, tests, and publishes via PyPI Trusted
-   Publishing — no token stored in the repo. One-time setup: on the PyPI project's
-   *Publishing* settings, add a Trusted Publisher for `Polybamz/forgefy-cli`,
-   workflow `release.yml`, environment `pypi`.
+3. `.github/workflows/release.yml` then, in parallel:
+   - builds and publishes the PyPI package via Trusted Publishing — no token
+     stored in the repo. One-time setup: on the PyPI project's *Publishing*
+     settings, add a Trusted Publisher for `Polybamz/forgefy-cli`, workflow
+     `release.yml`, environment `pypi`.
+   - builds a standalone `forgefy` binary for Windows/macOS/Linux with
+     PyInstaller and attaches them to a GitHub Release for the tag — what
+     `install.sh`/`install.ps1` fetch. No setup needed; uses the repo's
+     built-in `GITHUB_TOKEN`.
+
+To build the standalone binary locally (e.g. to test before tagging):
+
+```powershell
+pip install -e . pyinstaller
+pyinstaller --onefile --name forgefy --paths src --hidden-import anyio._backends._asyncio --distpath dist_native --workpath build_native --specpath build_native build_installer/entrypoint.py
+.\dist_native\forgefy.exe --help
+```
 
