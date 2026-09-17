@@ -24,10 +24,16 @@ class Provider:
         return {"Authorization": f"Bearer {key}"}
 
 
-# Same $FORGEFY_API_URL convention as the official SDKs (sdks/python,
-# sdks/typescript) and the self-hosted docs — the API has no single fixed
-# public host, so the origin is always read from the environment.
-_FORGEFY_API_URL = os.environ.get("FORGEFY_API_URL", "http://localhost:5000").rstrip("/")
+def forgefy_api_url() -> str:
+    """Return the Forgefy API origin — same $FORGEFY_API_URL convention as the
+    official SDKs (sdks/python, sdks/typescript) and the self-hosted docs, since
+    the API has no single fixed public host.
+
+    Read fresh (not cached at import time) so `forgefy login` picks up a
+    `--api-url` override passed after the process has already started.
+    """
+    return os.environ.get("FORGEFY_API_URL", "http://localhost:5000").rstrip("/")
+
 
 BUILTINS = {
     "ollama": Provider("ollama", "http://localhost:11434/v1"),
@@ -39,8 +45,10 @@ BUILTINS = {
     # Developers page — the same fgy_live_… keys and monthly token budget the
     # extract API and web builds use — and `export FORGEFY_API_KEY=fgy_live_…`.
     # Set FORGEFY_API_URL too if you're not on the default host (self-hosted,
-    # local dev). See app/api/v1/cli.py in forgefy-backend.
-    "forgefy": Provider("forgefy", f"{_FORGEFY_API_URL}/api/v1/cli", "FORGEFY_API_KEY"),
+    # local dev). Run `forgefy login` to fill FORGEFY_API_KEY automatically
+    # instead of copying a key from the Developers page by hand. See
+    # app/api/v1/cli.py in forgefy-backend.
+    "forgefy": Provider("forgefy", f"{forgefy_api_url()}/api/v1/cli", "FORGEFY_API_KEY"),
 }
 
 TEMPLATE = '''# Keep API keys in environment variables, never here.

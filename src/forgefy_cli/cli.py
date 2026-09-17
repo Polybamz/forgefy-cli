@@ -8,6 +8,7 @@ import sys
 
 import httpx
 
+from .auth import bootstrap_env
 from .chat import chat_loop
 from .config import TEMPLATE, config_path, load_config
 from .context import build_prompt
@@ -43,6 +44,9 @@ def parser() -> argparse.ArgumentParser:
     edit.add_argument("--max-turns", type=int, default=12, help="Maximum model requests (1–30; default 12)")
     models = sub.add_parser("models", help="List live provider model IDs (availability and pricing vary)")
     models.add_argument("--provider")
+    login = sub.add_parser("login", help="Sign in with your Forgefy account via the browser (device code)")
+    login.add_argument("--api-url", help="Override FORGEFY_API_URL for this login only")
+    sub.add_parser("logout", help="Remove the locally stored Forgefy account credential")
     sub.add_parser("providers", help="List built-in and configured provider plugins")
     sub.add_parser("skills", help="List built-in coding skills")
     sub.add_parser("doctor", help="Check configuration and key presence without sending requests")
@@ -53,7 +57,15 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    bootstrap_env()
     try:
+        if args.command == "login":
+            from .login import device_login
+            with httpx.Client(timeout=15) as http:
+                return device_login(http, api_url=args.api_url)
+        if args.command == "logout":
+            from .login import logout
+            return logout()
         if args.command == "config":
             path = config_path()
             if args.init:
