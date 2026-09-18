@@ -63,11 +63,34 @@ forgefy models --provider openrouter
 forgefy run "Explain this Python module and suggest tests" --provider openrouter --model YOUR_MODEL_ID --workspace 'C:\Users\USER\Desktop\polycarp\forgefy-cli' --file src/forgefy_cli/context.py --skill review
 ```
 
-Built-in profiles: Ollama, OpenAI, OpenRouter, DeepSeek and Groq. Anthropic and Gemini
-models can be used through OpenRouter when offered there; native Anthropic/Gemini
-protocols are not implemented. No automatic provider or paid-model fallback occurs.
-Compatibility requires the `/models` and `/chat/completions` endpoints; a listed model
-is not necessarily a compatible text-generation model.
+Built-in profiles: Ollama, OpenAI, OpenRouter, DeepSeek, Groq, and `forgefy` (your
+Forgefy account — see below). Anthropic and Gemini models can be used through
+OpenRouter when offered there; native Anthropic/Gemini protocols are not implemented.
+No automatic provider or paid-model fallback occurs. Compatibility requires the
+`/models` and `/chat/completions` endpoints; a listed model is not necessarily a
+compatible text-generation model.
+
+## Using your Forgefy account
+
+```powershell
+forgefy login
+```
+
+Opens your browser to confirm a code against your already-logged-in web session, mints
+an API key, and saves it to `~/.forgefy/credentials.json` — no copying a key by hand.
+In an interactive terminal it then offers to pick a default model from what your plan
+allows and saves it as `default_provider`/`default_model` in `config.toml`, so every
+command after that needs no `--provider`/`--model` at all:
+
+```powershell
+forgefy chat
+forgefy run "explain this module" --file src/app.py
+```
+
+Skip the prompt (Enter with no choice) to keep passing `--provider forgefy --model
+<id>` explicitly instead. Already have `default_provider`/`default_model` set?
+`login` leaves them alone rather than silently overwriting your choice. `forgefy
+logout` removes the stored credential.
 
 ## Provider plugins
 

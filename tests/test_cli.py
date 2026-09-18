@@ -10,7 +10,7 @@ from unittest.mock import patch
 import httpx
 
 from forgefy_cli.cli import main
-from forgefy_cli.config import BUILTINS, load_config, validate_provider
+from forgefy_cli.config import BUILTINS, TEMPLATE, load_config, set_defaults, validate_provider
 from forgefy_cli.context import build_prompt
 from forgefy_cli.providers import ModelClient, ProviderError
 from forgefy_cli.skills import system_prompt
@@ -118,6 +118,73 @@ class CliTests(unittest.TestCase):
         path = self.root / "skill.md"
         path.write_text("Use table-driven tests.", encoding="utf-8")
         self.assertIn("Use table-driven tests.", system_prompt("test", [path]))
+
+
+class SetDefaultsTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.path = Path(temp.name) / "config.toml"
+
+    def test_creates_file_from_template_when_missing(self):
+        result = set_defaults("forgefy", "some-model", self.path)
+        self.assertEqual(result, self.path)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn('default_provider = "forgefy"', text)
+        self.assertIn('default_model = "some-model"', text)
+        # The rest of TEMPLATE's helpful content (comments, plugin example)
+        # is preserved, not replaced by a bare two-line file.
+        self.assertIn("Provider plugin", text)
+        data, _ = load_config(self.path)
+        self.assertEqual(data["default_provider"], "forgefy")
+        self.assertEqual(data["default_model"], "some-model")
+
+    def test_upserts_into_existing_file_preserving_other_content(self):
+        self.path.write_text(
+            'default_provider = "ollama"\n'
+            '# default_model = "old"\n'
+            "\n"
+            "[providers.custom]\n"
+            'base_url = "http://localhost:1234/v1"\n',
+            encoding="utf-8",
+        )
+        set_defaults("forgefy", "new-model", self.path)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn('default_provider = "forgefy"', text)
+        self.assertIn('default_model = "new-model"', text)
+        self.assertNotIn("ollama", text)
+        self.assertNotIn("old", text)
+        self.assertIn("[providers.custom]", text)
+        self.assertIn('base_url = "http://localhost:1234/v1"', text)
+
+    def test_idempotent_rerun_does_not_duplicate_keys(self):
+        set_defaults("forgefy", "model-a", self.path)
+        set_defaults("forgefy", "model-b", self.path)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertEqual(text.count("default_provider ="), 1)
+        self.assertEqual(text.count("default_model ="), 1)
+        self.assertIn('default_model = "model-b"', text)
+
+    def test_result_loads_cleanly_and_resolves_default_model(self):
+        set_defaults("forgefy", "picked-model", self.path)
+        data, providers = load_config(self.path)
+        self.assertIn("forgefy", providers)
+        self.assertEqual(data.get("default_model"), "picked-model")
+
+    def test_rejects_values_with_quotes_or_newlines(self):
+        for bad in ('has"quote', "has\nnewline"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    set_defaults(bad, "model", self.path)
+                with self.assertRaises(ValueError):
+                    set_defaults("forgefy", bad, self.path)
+        self.assertFalse(self.path.exists())
+
+    def test_template_still_has_both_keys_for_upsert_to_target(self):
+        # Sanity check the assumption set_defaults relies on: TEMPLATE
+        # already contains (commented or not) both keys to upsert into.
+        self.assertIn("default_provider", TEMPLATE)
+        self.assertIn("default_model", TEMPLATE)
 
 
 if __name__ == "__main__":

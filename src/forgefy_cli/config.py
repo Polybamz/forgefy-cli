@@ -84,6 +84,42 @@ def validate_provider(name: str, value: dict) -> Provider:
     return Provider(name, url.rstrip("/"), env)
 
 
+_DEFAULT_PROVIDER_LINE = re.compile(r"^\s*default_provider\s*=.*$", re.MULTILINE)
+_DEFAULT_MODEL_LINE = re.compile(r"^\s*#*\s*default_model\s*=.*$", re.MULTILINE)
+
+
+def set_defaults(provider: str, model: str, path: Path | None = None) -> Path:
+    """Write default_provider/default_model into config.toml so a bare
+    `forgefy chat`/`forgefy run "..."` works with no --provider/--model —
+    the "configure once" convenience `forgefy login` offers after signing in.
+
+    Only touches those two top-level keys via a targeted text substitution
+    (tomllib is read-only; there's no stdlib TOML writer) — everything else
+    in the file, including [providers.*] tables, is left exactly as-is.
+    Creates the file from TEMPLATE first if it doesn't exist yet.
+    """
+    if '"' in provider or "\n" in provider or '"' in model or "\n" in model:
+        raise ValueError("Provider and model names must not contain quotes or newlines.")
+    path = path or config_path()
+    text = path.read_text(encoding="utf-8") if path.exists() else TEMPLATE
+
+    provider_line = f'default_provider = "{provider}"'
+    if _DEFAULT_PROVIDER_LINE.search(text):
+        text = _DEFAULT_PROVIDER_LINE.sub(provider_line, text, count=1)
+    else:
+        text = provider_line + "\n" + text
+
+    model_line = f'default_model = "{model}"'
+    if _DEFAULT_MODEL_LINE.search(text):
+        text = _DEFAULT_MODEL_LINE.sub(model_line, text, count=1)
+    else:
+        text = text.rstrip("\n") + "\n" + model_line + "\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
 def load_config(path: Path | None = None) -> tuple[dict, dict[str, Provider]]:
     path = path or config_path()
     data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}

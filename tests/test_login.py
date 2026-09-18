@@ -1,4 +1,7 @@
+import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -47,6 +50,12 @@ class DeviceLoginTests(unittest.TestCase):
 
         with patch("forgefy_cli.login.save_credentials") as mock_save:
             mock_save.return_value = "/fake/path"
+            # interactive=False pinned explicitly: these tests exercise the
+            # core login flow, not the model-picker (see
+            # DefaultModelPromptTests below) — leaving this to ambient
+            # sys.stdin.isatty() would make behavior (and whether
+            # load_config() touches the real ~/.forgefy/config.toml) depend
+            # on whether the test happens to run in a real terminal or not.
             code = device_login(
                 client,
                 api_url="https://forgefy.app",
@@ -54,6 +63,7 @@ class DeviceLoginTests(unittest.TestCase):
                 output=outputs.append,
                 sleep=fake_sleep,
                 now=fake_now,
+                interactive=False,
             )
         client.close()
         return code, outputs, opened, mock_save
@@ -105,7 +115,7 @@ class DeviceLoginTests(unittest.TestCase):
 
         client = httpx.Client(transport=httpx.MockTransport(respond))
         outputs = []
-        code = device_login(client, api_url="https://forgefy.app", output=outputs.append)
+        code = device_login(client, api_url="https://forgefy.app", output=outputs.append, interactive=False)
         client.close()
         self.assertEqual(code, 1)
         self.assertTrue(any("cannot reach" in line for line in outputs))
@@ -116,9 +126,82 @@ class DeviceLoginTests(unittest.TestCase):
 
         client = httpx.Client(transport=httpx.MockTransport(respond))
         outputs = []
-        code = device_login(client, api_url="https://forgefy.app", output=outputs.append)
+        code = device_login(client, api_url="https://forgefy.app", output=outputs.append, interactive=False)
         client.close()
         self.assertEqual(code, 1)
+
+
+class DefaultModelPromptTests(unittest.TestCase):
+    """The Cline-style "configure once" prompt after a successful login."""
+
+    @staticmethod
+    def _respond(model_ids, poll_status="approved", api_key="fgy_live_x"):
+        def respond(request: httpx.Request) -> httpx.Response:
+            path = request.url.path
+            if path.endswith("/device/start"):
+                return _start_response()
+            if path.endswith("/device/poll"):
+                body = {"status": poll_status}
+                if poll_status == "approved":
+                    body["api_key"] = api_key
+                return httpx.Response(200, json=body)
+            if path.endswith("/api/v1/cli/models"):
+                return httpx.Response(200, json={"data": [{"id": m} for m in model_ids]})
+            raise AssertionError(f"unexpected request: {request.url}")
+        return respond
+
+    def _run(self, model_ids, config_dir, input_value=None, interactive=True):
+        client = httpx.Client(transport=httpx.MockTransport(self._respond(model_ids)))
+        outputs = []
+        with patch("forgefy_cli.login.save_credentials", return_value="/fake/creds.json"), \
+                patch.dict(os.environ, {"FORGEFY_CONFIG": str(Path(config_dir) / "config.toml")}, clear=False):
+            code = device_login(
+                client, api_url="https://forgefy.app",
+                open_browser=lambda url: True, output=outputs.append,
+                sleep=lambda s: None, now=lambda: 0.0,
+                input_fn=(lambda prompt: input_value) if input_value is not None else input,
+                interactive=interactive,
+            )
+        client.close()
+        return code, outputs
+
+    def test_picks_and_saves_a_model(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, outputs = self._run(["model-a", "model-b"], d, input_value="2")
+            self.assertEqual(code, 0)
+            text = (Path(d) / "config.toml").read_text(encoding="utf-8")
+            self.assertIn('default_provider = "forgefy"', text)
+            self.assertIn('default_model = "model-b"', text)
+            self.assertTrue(any("Saved as your default" in line for line in outputs))
+
+    def test_skip_with_empty_input_does_not_write_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, outputs = self._run(["model-a"], d, input_value="")
+            self.assertEqual(code, 0)
+            self.assertFalse((Path(d) / "config.toml").exists())
+            self.assertTrue(any("Skipped" in line for line in outputs))
+
+    def test_invalid_choice_does_not_write_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._run(["model-a"], d, input_value="99")
+            self.assertFalse((Path(d) / "config.toml").exists())
+
+    def test_existing_defaults_are_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as d:
+            config_path = Path(d) / "config.toml"
+            original = 'default_provider = "ollama"\ndefault_model = "llama3"\n'
+            config_path.write_text(original, encoding="utf-8")
+            code, outputs = self._run(["model-a"], d, input_value="1")
+            self.assertEqual(code, 0)
+            self.assertEqual(config_path.read_text(encoding="utf-8"), original)
+            self.assertTrue(any("already set" in line for line in outputs))
+
+    def test_non_interactive_skips_entirely_without_writing_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            code, outputs = self._run(["model-a"], d, interactive=False)
+            self.assertEqual(code, 0)
+            self.assertFalse((Path(d) / "config.toml").exists())
+            self.assertTrue(any("Non-interactive session" in line for line in outputs))
 
 
 class LogoutTests(unittest.TestCase):
