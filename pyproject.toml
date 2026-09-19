@@ -31,3 +31,9 @@ forgefy = "forgefy_cli.cli:main"
 [build-system]
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+# Put the working tree ahead of site-packages: without this, `pytest` in a
+# checkout that also has forgefy-cli installed would import the installed
+# copy and report import errors for functions only present in src/.
+pythonpath = ["src"]

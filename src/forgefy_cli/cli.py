@@ -46,7 +46,7 @@ def parser() -> argparse.ArgumentParser:
     chat.add_argument("--session", default="default", help="Named session to save to disk (default: 'default')")
     chat.add_argument("--resume", action="store_true", help="Load previous turns from --session before starting; without this, every run starts fresh (but is still saved)")
     chat.add_argument("--no-history", action="store_true", help="Don't load or save this session at all; ephemeral like before")
-    edit = sub.add_parser("edit", help="Edit explicitly selected existing files with approval for every diff")
+    edit = sub.add_parser("edit", help="Edit, or add with --create, explicitly selected files; every change needs approval")
     edit.add_argument("prompt", help="Requested change")
     edit.add_argument("--provider", help="Provider profile; requires a tool-calling model")
     edit.add_argument("--model", help="Exact provider model ID")

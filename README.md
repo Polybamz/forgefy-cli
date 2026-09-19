@@ -154,12 +154,14 @@ this tool.
 
 ## Approved file editing
 
-`forgefy edit` can modify explicitly selected, **existing** UTF-8 files with a model
-supporting OpenAI-compatible tool calling. `run` and `chat` remain suggestion-only.
-In an interactive terminal, for example:
+`forgefy edit` can modify explicitly selected, **existing** UTF-8 files, and with
+`--create` add explicitly named new ones, using a model supporting OpenAI-compatible tool
+calling. `run` and `chat` remain suggestion-only. In an interactive terminal, for
+example:
 
 ```powershell
 & 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\forgefy.exe' edit "Improve error handling in this module" --provider ollama --model YOUR_TOOL_CALLING_MODEL --workspace 'C:\Users\USER\Desktop\polycarp\forgefy-cli' --file src/forgefy_cli/context.py
+& 'C:\Users\USER\Desktop\polycarp\.venv\Scripts\forgefy.exe' edit "Add a --dry-run flag with tests" --provider ollama --model YOUR_TOOL_CALLING_MODEL --workspace 'C:\Users\USER\Desktop\polycarp\forgefy-cli' --file src/forgefy_cli/cli.py --create tests/test_dry_run.py
 ```
 
 Review the selected files for secrets before starting: the model can read their contents
@@ -168,10 +170,17 @@ shows a complete diff and requires typing `yes`. There is no automatic approval 
 The executor requires a prior read, an exact single match, and unchanged contents before
 and after approval. Updates use a sibling temporary file and atomic replacement.
 
-Only files named by repeatable `--file` options are accessible. Hidden paths, common
-credential files, symlinks, junctions, hardlinks and nonregular files are rejected.
-Files and replacements are limited to 32,000 bytes; oversized diffs are rejected, not
-truncated for approval. These checks are not a secret scanner or an OS security sandbox.
+Each `--create` path is dormant until the model proposes it: the full new file content is
+printed (`+`-prefixed) and needs the same typed `yes`, and an existing file is never
+overwritten — the tool errors instead. Parent directories are not created, so only paths
+whose directory already exists can be created. Nothing about a `--create` path is sent as
+file content, since no file exists yet to read.
+
+Only files named by repeatable `--file` options (or `--create` paths) are accessible.
+Hidden paths, common credential files, symlinks, junctions, hardlinks and nonregular
+files are rejected. Files and replacements are limited to 32,000 bytes; oversized diffs
+are rejected, not truncated for approval. These checks are not a secret scanner or an OS
+security sandbox.
 Use a trusted workspace without concurrent writers: a small filesystem race window
 remains between validation and replacement. Atomic replacement preserves mode bits,
 not necessarily all filesystem metadata or custom ACLs.
@@ -183,8 +192,9 @@ means the model finished, not that its changes are correct or tested. Applied ed
 remain on disk if the session stops or fails—there is no session-wide rollback.
 Use version control or backups and review the printed list of files actually changed.
 
-Editing currently supports replacements and, with `--allow-commands`, running shell
-commands — no file deletion or custom skill files yet. Its integration tests use mocked
+Editing currently supports replacements, approved creation of explicitly named new
+files, and, with `--allow-commands`, running shell commands — no file deletion, no
+directory creation, and no custom skill files yet. Its integration tests use mocked
 model responses and temporary files; live model-driven editing has not been verified.
 
 ### Running commands (`--allow-commands`)
@@ -201,10 +211,11 @@ stderr are each capped at 32,000 characters before being shown back to the model
 
 ## Current boundaries
 
-This release can apply approved replacements and, opt-in, run approved shell commands
-(`--allow-commands`) — but that opt-in is not a sandbox, so read the section above before
-turning it on. It does not connect to the Forgefy admin catalogue. Provider profiles and
-skill files are the initial plugin interfaces, not a full autonomous coding-agent system.
+This release can apply approved replacements, create approved new files, and, opt-in, run
+approved shell commands (`--allow-commands`) — but that opt-in is not a sandbox, so read
+the section above before turning it on. It does not connect to the Forgefy admin
+catalogue. Provider profiles and skill files are the initial plugin interfaces, not a
+full autonomous coding-agent system.
 Output is untrusted: inspect it before running anything, whether it's a file diff or a
 command result. Tests use mocked HTTP (and, for the process-level suite, a real loopback
 server), not live model quality benchmarks.
