@@ -154,9 +154,9 @@ def device_login(
     return 1
 
 
-def logout() -> int:
+def logout(output: Callable[[str], None] = print) -> int:
     if clear_credentials():
-        print(f"Removed {credentials_path()}. You're logged out.")
+        output(f"Removed {credentials_path()}. You're logged out.")
     else:
-        print("Not logged in (no stored credential).")
+        output("Not logged in (no stored credential).")
     return 0

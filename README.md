@@ -31,10 +31,12 @@ Either way, open a new terminal and you should have the `forgefy` command:
 
 ```powershell
 forgefy --help
+forgefy auth          # sign in (or: forgefy login, the same thing)
 forgefy config --init
 forgefy providers
 forgefy skills
 forgefy doctor
+forgefy history
 ```
 
 ### Developing locally
@@ -44,6 +46,99 @@ git clone https://github.com/Polybamz/forgefy-cli.git
 cd forgefy-cli
 pip install -e ".[dev]"
 ```
+
+## Quick start
+
+```powershell
+forgefy                                    # interactive session: the agent reads the
+                                           # workspace and asks before every change
+forgefy "add a --dry-run flag with tests"  # one task, same approval rules
+forgefy -p "plan that change first"        # plan mode: read-only, nothing can change
+forgefy --json "list TODO comments"        # newline-delimited JSON for scripts and CI
+forgefy auth                               # sign in to your Forgefy account (browser)
+forgefy history                            # what you have run, and resume it
+```
+
+`forgefy` with no prompt starts an interactive session; a prompt runs one task and exits.
+Both are the same agent, with the same tools and the same approval boundary: it may read
+the workspace, and every write is shown as a complete diff that you must approve by
+typing `yes`. `-p/--plan` removes the write tools entirely.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| *(prompt)* | Run one task in act mode; omit the prompt for an interactive session |
+| `auth [provider]` | Sign in to your Forgefy account (device code), or check a provider key |
+| `config [--init]` | Print the config path, or create a starter `config.toml` |
+| `doctor` | Check configuration, keys and session state without sending a request |
+| `history` (`h`) | List saved sessions; add `--show ID`, `--delete ID`, `--clear` |
+| `models` | List the live model IDs the selected provider offers |
+| `providers` | List built-in and configured provider profiles |
+| `skills` | List the built-in coding skills |
+| `update` | Check PyPI for a newer release (it does not install anything) |
+| `version` | Print the CLI version (`-V`/`--version` too) |
+| `logout` | Remove the stored Forgefy credential |
+| `run` | Legacy: one-shot suggestion with `--file` context, no tools |
+| `chat` | Legacy: interactive chat with no workspace tools |
+| `edit` | Legacy: edit only the files named by `--file`/`--create` |
+
+## Global flags
+
+Accepted before or after the subcommand, the way Cline CLI's globals are:
+
+| Flag | Meaning |
+| --- | --- |
+| `-p, --plan` | Plan mode: read-only tools, no edits, no commands |
+| `--json` | One JSON object per stdout line instead of text (see below) |
+| `--auto-approve <true\|false>` | Skip the approval prompts (default `false`) |
+| `-m, --model` / `-P, --provider` | Model and provider profile for this run |
+| `-c, --cwd <path>` (`--workspace`) | Working directory (default: the current one) |
+| `--config <path>` | Config directory, or a `*.toml` file |
+| `--data-dir <path>` | Keep config, credentials and sessions under one directory |
+| `-k, --key <api-key>` | API key for this run only; never written to disk |
+| `-s, --system <prompt>` | Replace the built-in system prompt |
+| `-t, --timeout <seconds>` | Request and command timeout (default 120) |
+| `-i, --tui` | Start the interactive session |
+| `--id <session-id>` | Resume a saved session by name |
+| `--no-history` | Don't load or save session history |
+| `--file` / `--create` | Restrict the agent to these paths instead of the workspace |
+| `--allow-commands` | Let the agent propose shell commands (approval per command; not a sandbox) |
+| `--max-turns <n>` | Maximum model requests per turn (1-30, default 12) |
+| `-v, --verbose` | Extra diagnostics on stderr |
+
+### Deliberate differences from Cline CLI
+
+* `--auto-approve` defaults to **false**. Cline's default is `true`; here the approval
+  prompt is the only thing standing between a model and your files, so it is opt-in, and
+  a non-interactive run declines changes rather than applying them.
+* Not implemented, and not stubbed with fake behaviour: `--thinking`, `--retries`,
+  `--acp`, `-z/--zen`, `--hooks-dir`, `mcp`, `plugin`, `schedule`, `hub`, `connect`,
+  `kanban`, agent teams, checkpoints and MCP servers. This is an agent over any
+  OpenAI-compatible chat-completions endpoint, not a reimplementation of Cline.
+
+### `--json` output
+
+Each line is one JSON object, using the fields Cline CLI documents:
+
+```json
+{"type": "say", "say": "text", "text": "I'll read the file first.", "ts": 1760501486669}
+{"type": "say", "say": "info", "text": "Files actually changed: none", "ts": 1760501486670}
+{"type": "ask", "ask": "approval", "text": "Proposed change (complete diff): ...", "ts": 1760501486671}
+```
+
+`type` is `"say"` or `"ask"`; a `say` carries a subtype (`text`, `info`, `error`,
+`history`, `message`); `ts` is Unix milliseconds. `--json` implies no streaming, so each
+reply arrives as one complete message rather than partial chunks, and human-readable text
+never mixes into stdout — pipe it straight into `jq`.
+
+## Sessions and history
+
+Every agent run and chat is saved under `--id` (default `default`) inside
+`~/.forgefy/history/`: agent sessions keep the full tool conversation, chat sessions keep
+their turns. `forgefy history` lists them, `--show ID` prints one, `--delete ID` and
+`--clear` remove them, and `--id ID` (or `chat --resume`) continues one. `--no-history`
+skips saving entirely.
 
 ## Local and hosted models
 
@@ -73,7 +168,7 @@ compatible text-generation model.
 ## Using your Forgefy account
 
 ```powershell
-forgefy login
+forgefy auth
 ```
 
 Opens your browser to confirm a code against your already-logged-in web session, mints
@@ -83,14 +178,16 @@ allows and saves it as `default_provider`/`default_model` in `config.toml`, so e
 command after that needs no `--provider`/`--model` at all:
 
 ```powershell
+forgefy "explain this module"
 forgefy chat
 forgefy run "explain this module" --file src/app.py
 ```
 
 Skip the prompt (Enter with no choice) to keep passing `--provider forgefy --model
-<id>` explicitly instead. Already have `default_provider`/`default_model` set?
-`login` leaves them alone rather than silently overwriting your choice. `forgefy
-logout` removes the stored credential.
+<id>` explicitly instead. Already have `default_provider`/`default_model` set? `auth`
+leaves them alone rather than silently overwriting your choice. `forgefy auth <provider>`
+instead checks the key environment variable for one of the other profiles without
+signing anything in, and `forgefy logout` removes the stored credential.
 
 ## Provider plugins
 
@@ -154,9 +251,16 @@ this tool.
 
 ## Approved file editing
 
-`forgefy edit` can modify explicitly selected, **existing** UTF-8 files, and with
-`--create` add explicitly named new ones, using a model supporting OpenAI-compatible tool
-calling. `run` and `chat` remain suggestion-only. In an interactive terminal, for
+The default `forgefy "task"` / interactive session runs in **workspace scope**: the agent
+may read, list and search anywhere in the working directory (hidden, credential and
+symlink paths are refused), and every `replace_text`/`create_file` it proposes is printed
+as a complete diff that needs a typed `yes`. Add repeatable `--file`/`--create` to narrow
+that, or use `forgefy -p` for a session that cannot write at all.
+
+`forgefy edit` is the older, tighter variant kept for scripts: it can only touch the
+**existing** files you name with `--file`, and with `--create` explicitly named new ones,
+using a model supporting OpenAI-compatible tool calling. `run` and `chat` remain
+suggestion-only. In an interactive terminal, for
 example:
 
 ```powershell
@@ -166,9 +270,11 @@ example:
 
 Review the selected files for secrets before starting: the model can read their contents
 and send them to the selected provider without further read approval. Each replacement
-shows a complete diff and requires typing `yes`. There is no automatic approval flag.
-The executor requires a prior read, an exact single match, and unchanged contents before
-and after approval. Updates use a sibling temporary file and atomic replacement.
+shows a complete diff and requires typing `yes`. `--auto-approve true` removes that
+prompt, which is why it defaults to false. The executor requires a prior read, an exact
+single match, and unchanged contents before and after approval. Updates use a sibling
+temporary file and atomic replacement. `list_files` and `search_files` are read-only and
+skip the same hidden, credential, symlink and oversized/binary files.
 
 Each `--create` path is dormant until the model proposes it: the full new file content is
 printed (`+`-prefixed) and needs the same typed `yes`, and an existing file is never
@@ -211,11 +317,13 @@ stderr are each capped at 32,000 characters before being shown back to the model
 
 ## Current boundaries
 
-This release can apply approved replacements, create approved new files, and, opt-in, run
-approved shell commands (`--allow-commands`) — but that opt-in is not a sandbox, so read
-the section above before turning it on. It does not connect to the Forgefy admin
-catalogue. Provider profiles and skill files are the initial plugin interfaces, not a
-full autonomous coding-agent system.
+This release can explore a workspace with read-only tools, apply approved replacements,
+create approved new files, and, opt-in, run approved shell commands (`--allow-commands`)
+— but that opt-in is not a sandbox, so read the section above before turning it on.
+`--auto-approve true` waives the prompts entirely for unattended runs; it is off by
+default for a reason. It does not connect to the Forgefy admin catalogue. Provider
+profiles and skill files are the initial plugin interfaces, not a full autonomous
+coding-agent system.
 Output is untrusted: inspect it before running anything, whether it's a file diff or a
 command result. Tests use mocked HTTP (and, for the process-level suite, a real loopback
 server), not live model quality benchmarks.
